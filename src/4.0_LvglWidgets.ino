@@ -25,6 +25,9 @@
  * #define LV_USE_PERF_MONITOR 1
  ******************************************************************************/
 #include "lv_demo_widgets.h"
+#include <Arduino.h>
+#include <ArduinoLog.h>
+#include <esp_task_wdt.h>
 
 /*******************************************************************************
  * Start of Arduino_GFX setting
@@ -51,19 +54,18 @@
 #define GFX_BL 38
 
 Arduino_ESP32RGBPanel *bus = new Arduino_ESP32RGBPanel(
-  39 /* CS */, 48 /* SCK */, 47 /* SDA */,
-  18 /* DE */, 17 /* VSYNC */, 16 /* HSYNC */, 21 /* PCLK */,
-  11 /* R0 */, 12 /* R1 */, 13 /* R2 */, 14 /* R3 */, 0 /* R4 */,
-  8 /* G0 */, 20 /* G1 */, 3 /* G2 */, 46 /* G3 */, 9 /* G4 */, 10 /* G5 */,
-  4 /* B0 */, 5 /* B1 */, 6 /* B2 */, 7 /* B3 */, 15 /* B4 */
+    39 /* CS */, 48 /* SCK */, 47 /* SDA */,
+    18 /* DE */, 17 /* VSYNC */, 16 /* HSYNC */, 21 /* PCLK */,
+    11 /* R0 */, 12 /* R1 */, 13 /* R2 */, 14 /* R3 */, 0 /* R4 */,
+    8 /* G0 */, 20 /* G1 */, 3 /* G2 */, 46 /* G3 */, 9 /* G4 */, 10 /* G5 */,
+    4 /* B0 */, 5 /* B1 */, 6 /* B2 */, 7 /* B3 */, 15 /* B4 */
 );
-    Arduino_ST7701_RGBPanel *gfx = new Arduino_ST7701_RGBPanel(
+Arduino_ST7701_RGBPanel *gfx = new Arduino_ST7701_RGBPanel(
     bus, GFX_NOT_DEFINED /* RST */, 0 /* rotation */,
     true /* IPS */, 480 /* width */, 480 /* height */,
-    st7701_type1_init_operations, sizeof(st7701_type1_init_operations),     true /* BGR */,
+    st7701_type1_init_operations, sizeof(st7701_type1_init_operations), true /* BGR */,
     10 /* hsync_front_porch */, 8 /* hsync_pulse_width */, 50 /* hsync_back_porch */,
     10 /* vsync_front_porch */, 8 /* vsync_pulse_width */, 20 /* vsync_back_porch */);
-
 
 /*******************************************************************************
  * Please config the touch panel in touch.h
@@ -115,31 +117,65 @@ void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data)
   }
 }
 
+#ifndef SERIAL_BAUD
+#define SERIAL_BAUD 115200
+#endif
+
+#ifndef LOG_LEVEL
+#define LOG_LEVEL LOG_LEVEL_VERBOSE
+#endif
+
+#define logSection(section)                                     \
+  Log.setShowLevel(false);                                      \
+  Log.notice(F("************* " section " **************" CR)); \
+  Log.setShowLevel(true);
+
 void setup()
 {
-  Serial.begin(115200);
-  // while (!Serial);
-  Serial.println("LVGL Widgets Demo");
+  Serial.begin(SERIAL_BAUD);
+  //  delay(1000);
+  esp_task_wdt_init(120, true); // enable panic so ESP32 restarts
+  esp_task_wdt_add(NULL);       // add current thread to WDT watch
+  // Log.setPrefix(logPrintPrefix);
+  Log.begin(LOG_LEVEL, &Serial);
+  delay(4000); // Wait for serial monitor to open
+  logSection("LVGL Widgets Demo");
 
+  logSection("ESP Information");
+
+  Log.verbose("SRAM free size: %d\n", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+  Log.verbose("PSRAM free size: %d\n", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+
+  Log.verbose(F("Free heap: %d bytes" CR), ESP.getFreeHeap());
+  Log.verbose(F("Free sketch space: %d bytes" CR), ESP.getFreeSketchSpace());
+  Log.verbose(F("Chip ID: %x" CR), ESP.getEfuseMac());
+
+  Log.verbose(F("Flash chip size: %d bytes" CR), ESP.getFlashChipSize());
+  //  Log.verbose(F("Flash chip speed: %d Hz" CR), ESP.getFlashChipSpeed());
+  Log.verbose(F("CPU frequency: %d Hz" CR), ESP.getCpuFreqMHz());
+  Log.verbose(F("SDK version: %s" CR), ESP.getSdkVersion());
+
+  logSection("touch_init");
   // Init touch device
   touch_init();
 
   // Init Display
-  //gfx->begin();
-  
+  // gfx->begin();
+
   gfx->begin(16000000); /* specify data bus speed */
 
-  gfx->fillScreen(BLACK);
+  gfx->fillScreen(NAVY);
 
 #ifdef GFX_BL
   pinMode(GFX_BL, OUTPUT);
   digitalWrite(GFX_BL, HIGH);
 #endif
-
+  logSection("lv_init");
   lv_init();
 
   screenWidth = gfx->width();
   screenHeight = gfx->height();
+  Log.verbose(F("Width: %l, Height: %l" CR), screenWidth, screenHeight);
 #ifdef ESP32
   disp_draw_buf = (lv_color_t *)heap_caps_malloc(sizeof(lv_color_t) * screenWidth * 200, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 #else
@@ -151,6 +187,7 @@ void setup()
   }
   else
   {
+    logSection("lv_disp_draw_buf_init");
     lv_disp_draw_buf_init(&draw_buf, disp_draw_buf, NULL, screenWidth * 200);
 
     /* Initialize the display */
@@ -171,12 +208,13 @@ void setup()
 
     lv_demo_widgets();
 
-    Serial.println("Setup done");
+    Serial.println("DEmo done");
   }
+  Serial.println("Setup done");
 }
 
 void loop()
 {
   lv_timer_handler(); /* let the GUI do its work */
-  delay(5);
+  delay(500);
 }
